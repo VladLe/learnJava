@@ -82,7 +82,9 @@ FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 # Rewriter
 REWRITE_PROVIDER = env("REWRITE_PROVIDER")
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-8")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o")
 
 # APScheduler
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
