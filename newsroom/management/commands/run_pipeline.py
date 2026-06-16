@@ -5,12 +5,16 @@ from newsroom import pipeline
 
 
 class Command(BaseCommand):
-    help = "Run the fetch pipeline for enabled sources"
+    help = "Run the pipeline (fetch + extract) for enabled sources"
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--source-id", type=int, default=None,
             help="Run for a specific source ID only",
+        )
+        parser.add_argument(
+            "--step", choices=["fetch", "extract", "all"], default="all",
+            help="Which pipeline step to run (default: all)",
         )
 
     def handle(self, *args, **options):
@@ -22,12 +26,26 @@ class Command(BaseCommand):
             self.stderr.write("No enabled sources found.")
             return
 
+        step = options["step"]
+
         for source in qs:
-            self.stdout.write(f"Fetching: {source.name} ({source.url})")
-            try:
-                saved, skipped = pipeline.fetch_and_store(source)
-                self.stdout.write(
-                    self.style.SUCCESS(f"  Done — saved: {saved}, skipped: {skipped}")
-                )
-            except Exception as exc:
-                self.stderr.write(self.style.ERROR(f"  Error: {exc}"))
+            self.stdout.write(f"\nSource: {source.name}")
+
+            if step in ("fetch", "all"):
+                try:
+                    saved, skipped = pipeline.fetch_and_store(source)
+                    self.stdout.write(
+                        self.style.SUCCESS(f"  Fetch — saved: {saved}, skipped: {skipped}")
+                    )
+                except Exception as exc:
+                    self.stderr.write(self.style.ERROR(f"  Fetch error: {exc}"))
+                    continue
+
+            if step in ("extract", "all"):
+                try:
+                    extracted, failed = pipeline.extract_articles(source)
+                    self.stdout.write(
+                        self.style.SUCCESS(f"  Extract — done: {extracted}, failed: {failed}")
+                    )
+                except Exception as exc:
+                    self.stderr.write(self.style.ERROR(f"  Extract error: {exc}"))
