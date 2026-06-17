@@ -1,44 +1,14 @@
 import logging
 
-import httpx
 from django import forms
 from django.contrib import admin, messages
 from django.http import JsonResponse
 from django.urls import path
 
 from .models import Article, Publication, RewrittenContent, Source, TargetSite, WordPressCategory
+from .publish.wordpress import WordPressPublisher
 
 logger = logging.getLogger(__name__)
-
-
-# ── WordPress helpers ─────────────────────────────────────────────────────────
-
-def _fetch_wp_categories(site: TargetSite) -> int:
-    base = site.base_url.rstrip("/")
-    count = 0
-    page = 1
-    while True:
-        resp = httpx.get(
-            f"{base}/wp-json/wp/v2/categories",
-            auth=(site.auth_user, site.auth_app_password),
-            params={"per_page": 100, "page": page},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            break
-        for cat in data:
-            WordPressCategory.objects.update_or_create(
-                site=site,
-                wp_category_id=cat["id"],
-                defaults={"name": cat["name"], "slug": cat["slug"]},
-            )
-            count += 1
-        if len(data) < 100:
-            break
-        page += 1
-    return count
 
 
 # ── TargetSite ────────────────────────────────────────────────────────────────
@@ -54,14 +24,10 @@ class TargetSiteAdmin(admin.ModelAdmin):
     def action_check_connection(self, request, queryset):
         for site in queryset:
             try:
-                url = f"{site.base_url.rstrip('/')}/wp-json/wp/v2/"
-                resp = httpx.get(
-                    url, auth=(site.auth_user, site.auth_app_password), timeout=10
-                )
-                resp.raise_for_status()
+                WordPressPublisher.check_connection(site)
                 self.message_user(
                     request,
-                    f"{site.name}: подключение успешно (HTTP {resp.status_code}).",
+                    f"{site.name}: подключение успешно.",
                     messages.SUCCESS,
                 )
             except Exception as exc:
@@ -72,7 +38,7 @@ class TargetSiteAdmin(admin.ModelAdmin):
     def action_sync_categories(self, request, queryset):
         for site in queryset:
             try:
-                n = _fetch_wp_categories(site)
+                n = WordPressPublisher.sync_categories(site)
                 self.message_user(
                     request,
                     f"{site.name}: синхронизировано {n} рубрик.",

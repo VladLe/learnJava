@@ -14,7 +14,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--step",
-            choices=["fetch", "extract", "rewrite", "all"],
+            choices=["fetch", "extract", "rewrite", "publish", "all"],
             default="all",
             help="Which pipeline step to run (default: all)",
         )
@@ -60,3 +60,12 @@ class Command(BaseCommand):
                     )
                 except Exception as exc:
                     self.stderr.write(self.style.ERROR(f"  Rewrite error: {exc}"))
+
+            if step in ("publish", "all"):
+                try:
+                    published, failed = pipeline.publish_articles(source)
+                    self.stdout.write(
+                        self.style.SUCCESS(f"  Publish — done: {published}, failed: {failed}")
+                    )
+                except Exception as exc:
+                    self.stderr.write(self.style.ERROR(f"  Publish error: {exc}"))

@@ -3,9 +3,12 @@ import logging
 from django.db import IntegrityError
 from django.utils import timezone
 
-from .models import Article, RewrittenContent, Source
+from django.utils import timezone
+
+from .models import Article, Publication, RewrittenContent, Source
 from . import dedup
 from .extract.article import extract_text
+from .publish.wordpress import WordPressPublisher
 from .rewrite.base import RewriteRequest
 from .rewrite.factory import get_rewriter
 from .sources.rss import RssFetcher
@@ -129,3 +132,67 @@ def rewrite_articles(source: Source | None = None) -> tuple[int, int]:
             logger.warning("Rewrite failed for article %d: %s", article.pk, exc)
 
     return rewritten, failed
+
+
+_publisher = WordPressPublisher()
+
+
+def publish_articles(source: Source | None = None) -> tuple[int, int]:
+    """Publish all articles in 'rewritten' status to their target WordPress site.
+
+    Optionally scoped to a single source. Returns (published, failed).
+    """
+    qs = (
+        Article.objects.filter(status=Article.Status.REWRITTEN)
+        .select_related("source", "source__target_site", "source__target_category", "rewritten")
+    )
+    if source is not None:
+        qs = qs.filter(source=source)
+
+    published = failed = 0
+
+    for article in qs:
+        src = article.source
+        site = src.target_site
+        status = src.post_status or site.default_status
+
+        try:
+            outcome = _publisher.publish(
+                site=site,
+                category=src.target_category,
+                content=article.rewritten,
+                source_url=article.source_url,
+                status=status,
+            )
+            Publication.objects.update_or_create(
+                article=article,
+                target_site=site,
+                defaults={
+                    "wp_post_id": outcome.wp_post_id,
+                    "wp_url": outcome.wp_url,
+                    "status": Publication.Status.PUBLISHED,
+                    "error": "",
+                    "published_at": timezone.now(),
+                },
+            )
+            Article.objects.filter(pk=article.pk).update(
+                status=Article.Status.PUBLISHED, error=""
+            )
+            published += 1
+            logger.info("Published: %s → %s", article.original_title, outcome.wp_url)
+        except Exception as exc:
+            Publication.objects.update_or_create(
+                article=article,
+                target_site=site,
+                defaults={
+                    "status": Publication.Status.FAILED,
+                    "error": str(exc),
+                },
+            )
+            Article.objects.filter(pk=article.pk).update(
+                status=Article.Status.FAILED, error=str(exc)
+            )
+            failed += 1
+            logger.warning("Publish failed for article %d: %s", article.pk, exc)
+
+    return published, failed

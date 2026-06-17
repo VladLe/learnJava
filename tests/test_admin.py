@@ -81,7 +81,7 @@ def test_sync_categories_action_upserts(admin_client, target_site):
     mock_resp.json.return_value = fake_categories
     mock_resp.raise_for_status.return_value = None
 
-    with patch("newsroom.admin.httpx.get", return_value=mock_resp):
+    with patch("newsroom.publish.wordpress.httpx.get", return_value=mock_resp):
         resp = admin_client.post(
             "/admin/newsroom/targetsite/",
             {
