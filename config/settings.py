@@ -78,9 +78,17 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# In production (DEBUG=False) collectstatic runs and WhiteNoise serves hashed,
+# compressed assets from a manifest. In dev/tests the manifest does not exist,
+# so fall back to plain filesystem storage that does not require it.
+_staticfiles_backend = (
+    "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    if not DEBUG
+    else "django.contrib.staticfiles.storage.StaticFilesStorage"
+)
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "staticfiles": {"BACKEND": _staticfiles_backend},
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
