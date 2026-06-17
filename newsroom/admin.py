@@ -97,8 +97,11 @@ class SourceAdminForm(forms.ModelForm):
 @admin.register(Source)
 class SourceAdmin(admin.ModelAdmin):
     form = SourceAdminForm
-    list_display = ["name", "url", "target_site", "target_category", "enabled", "last_fetched_at"]
-    list_filter = ["enabled", "target_site", "tone", "target_length"]
+    list_display = [
+        "name", "url", "target_site", "target_category",
+        "enabled", "add_featured_image", "last_fetched_at",
+    ]
+    list_filter = ["enabled", "add_featured_image", "target_site", "tone", "target_length"]
     search_fields = ["name", "url"]
     actions = ["action_run_now"]
 

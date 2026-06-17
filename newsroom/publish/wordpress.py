@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 class WordPressPublisher(Publisher):
-    def publish(self, site, category, content, source_url: str, status: str = "draft") -> PublishOutcome:
+    def publish(self, site, category, content, source_url: str, status: str = "draft",
+                image=None) -> PublishOutcome:
         base = site.base_url.rstrip("/")
         auth = (site.auth_user, site.auth_app_password)
 
@@ -23,6 +24,11 @@ class WordPressPublisher(Publisher):
         }
         if category:
             payload["categories"] = [category.wp_category_id]
+
+        if image is not None:
+            media_id = self._upload_media(base, auth, image)
+            if media_id:
+                payload["featured_media"] = media_id
 
         try:
             resp = httpx.post(
@@ -65,6 +71,51 @@ class WordPressPublisher(Publisher):
             except Exception as exc:
                 logger.warning("Could not create/get tag '%s': %s", name, exc)
         return tag_ids
+
+    def _upload_media(self, base: str, auth: tuple, image) -> int | None:
+        """Download a stock image and upload it to the WP media library.
+
+        Returns the new media id, or None on any failure (image is optional and
+        must never block publishing).
+        """
+        try:
+            img_resp = httpx.get(image.url, timeout=30, follow_redirects=True)
+            img_resp.raise_for_status()
+            content_type = img_resp.headers.get("content-type", "image/jpeg")
+            ext = "png" if "png" in content_type else "jpg"
+
+            resp = httpx.post(
+                f"{base}/wp-json/wp/v2/media",
+                auth=auth,
+                content=img_resp.content,
+                headers={
+                    "Content-Type": content_type,
+                    "Content-Disposition": f'attachment; filename="featured.{ext}"',
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            media_id = resp.json()["id"]
+
+            # Best-effort alt text and credit; ignore if it fails.
+            try:
+                httpx.post(
+                    f"{base}/wp-json/wp/v2/media/{media_id}",
+                    auth=auth,
+                    json={
+                        "alt_text": image.alt,
+                        "caption": f"Фото: {image.credit}" if image.credit else "",
+                    },
+                    timeout=15,
+                )
+            except Exception as exc:
+                logger.warning("Could not set media alt/caption: %s", exc)
+
+            logger.info("Uploaded featured media %d", media_id)
+            return media_id
+        except Exception as exc:
+            logger.warning("Featured image upload failed (skipping): %s", exc)
+            return None
 
     @staticmethod
     def update_status(site, wp_post_id: int, status: str) -> None:

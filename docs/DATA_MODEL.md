@@ -66,6 +66,7 @@
 | `post_status` | CharField, null | Переопределение статуса публикации (иначе берётся с сайта) |
 | `tone` | CharField | Тон рерайта (`neutral`/`analytical`/`conversational`) |
 | `target_length` | CharField | Длина рерайта (`short`/`medium`/`long`) |
+| `add_featured_image` | BooleanField | Подбирать изображение записи из стокового банка |
 | `last_fetched_at` | DateTimeField, null | Когда опрашивали последний раз |
 | `created_at` | DateTimeField | — |
 

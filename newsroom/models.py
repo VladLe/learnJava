@@ -67,6 +67,10 @@ class Source(models.Model):
     target_length = models.CharField(
         max_length=10, choices=TargetLength.choices, default=TargetLength.MEDIUM
     )
+    add_featured_image = models.BooleanField(
+        default=True,
+        help_text="Подбирать изображение записи из стокового банка (если провайдер настроен)",
+    )
     last_fetched_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

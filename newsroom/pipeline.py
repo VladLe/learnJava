@@ -6,6 +6,7 @@ from django.utils import timezone
 from .models import Article, Publication, RewrittenContent, Source
 from . import dedup
 from .extract.article import extract_text
+from .images.factory import get_image_provider
 from .publish.wordpress import WordPressPublisher
 from .rewrite.base import RewriteRequest
 from .rewrite.factory import get_rewriter
@@ -135,6 +136,25 @@ def rewrite_articles(source: Source | None = None) -> tuple[int, int]:
 _publisher = WordPressPublisher()
 
 
+def _image_query(content) -> str:
+    """Build a stock-image search query from rewritten content (tags, then title)."""
+    tags = [t for t in (content.tags or []) if t]
+    if tags:
+        return " ".join(tags[:2])
+    return content.title
+
+
+def _select_image(provider, content):
+    """Return an ImageCandidate for the content, or None (never raises)."""
+    if provider is None:
+        return None
+    try:
+        return provider.search(_image_query(content))
+    except Exception as exc:
+        logger.warning("Image search failed (skipping): %s", exc)
+        return None
+
+
 def publish_articles(source: Source | None = None) -> tuple[int, int]:
     """Publish all articles in 'rewritten' status to their target WordPress site.
 
@@ -147,12 +167,14 @@ def publish_articles(source: Source | None = None) -> tuple[int, int]:
     if source is not None:
         qs = qs.filter(source=source)
 
+    image_provider = get_image_provider()
     published = failed = 0
 
     for article in qs:
         src = article.source
         site = src.target_site
         status = src.post_status or site.default_status
+        image = _select_image(image_provider, article.rewritten) if src.add_featured_image else None
 
         try:
             outcome = _publisher.publish(
@@ -161,6 +183,7 @@ def publish_articles(source: Source | None = None) -> tuple[int, int]:
                 content=article.rewritten,
                 source_url=article.source_url,
                 status=status,
+                image=image,
             )
             Publication.objects.update_or_create(
                 article=article,

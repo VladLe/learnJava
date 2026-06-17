@@ -87,6 +87,10 @@ ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-8")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o")
 
+# Featured images (stock photo bank)
+IMAGE_PROVIDER = env("IMAGE_PROVIDER", default="none")  # none | pexels
+PEXELS_API_KEY = env("PEXELS_API_KEY", default="")
+
 # APScheduler
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 APSCHEDULER_RUN_NOW_TIMEOUT = 25
