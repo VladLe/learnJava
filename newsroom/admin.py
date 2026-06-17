@@ -99,9 +99,12 @@ class SourceAdmin(admin.ModelAdmin):
     form = SourceAdminForm
     list_display = [
         "name", "url", "target_site", "target_category",
-        "enabled", "add_featured_image", "last_fetched_at",
+        "enabled", "add_featured_image", "require_moderation", "last_fetched_at",
     ]
-    list_filter = ["enabled", "add_featured_image", "target_site", "tone", "target_length"]
+    list_filter = [
+        "enabled", "add_featured_image", "require_moderation",
+        "target_site", "tone", "target_length",
+    ]
     search_fields = ["name", "url"]
     actions = ["action_run_now"]
 
@@ -152,7 +155,7 @@ class ArticleAdmin(admin.ModelAdmin):
     list_filter = ["status", "source"]
     search_fields = ["original_title", "source_url"]
     readonly_fields = ["url_hash", "fetched_at"]
-    actions = ["action_retry"]
+    actions = ["action_retry", "action_approve", "action_reject"]
 
     @admin.action(description="Повторить обработку (вернуть статус fetched)")
     def action_retry(self, request, queryset):
@@ -161,6 +164,22 @@ class ArticleAdmin(admin.ModelAdmin):
         )
         level = messages.SUCCESS if updated else messages.WARNING
         self.message_user(request, f"Переведено в повтор: {updated} статей.", level)
+
+    @admin.action(description="Одобрить (отправить в публикацию)")
+    def action_approve(self, request, queryset):
+        updated = queryset.filter(status=Article.Status.PENDING).update(
+            status=Article.Status.REWRITTEN, error=""
+        )
+        level = messages.SUCCESS if updated else messages.WARNING
+        self.message_user(request, f"Одобрено: {updated} статей.", level)
+
+    @admin.action(description="Отклонить (снять с публикации)")
+    def action_reject(self, request, queryset):
+        updated = queryset.filter(status=Article.Status.PENDING).update(
+            status=Article.Status.REJECTED
+        )
+        level = messages.SUCCESS if updated else messages.WARNING
+        self.message_user(request, f"Отклонено: {updated} статей.", level)
 
 
 # ── RewrittenContent ──────────────────────────────────────────────────────────

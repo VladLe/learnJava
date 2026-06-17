@@ -12,7 +12,10 @@ def test_target_site_str():
 @pytest.mark.django_db
 def test_article_status_choices():
     choices = {c[0] for c in Article.Status.choices}
-    assert {"fetched", "extracted", "rewritten", "published", "failed", "skipped"} == choices
+    assert {
+        "fetched", "extracted", "rewritten", "pending", "rejected",
+        "published", "failed", "skipped",
+    } == choices
 
 
 @pytest.mark.django_db

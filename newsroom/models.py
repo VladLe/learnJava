@@ -71,6 +71,10 @@ class Source(models.Model):
         default=True,
         help_text="Подбирать изображение записи из стокового банка (если провайдер настроен)",
     )
+    require_moderation = models.BooleanField(
+        default=False,
+        help_text="Перед публикацией статья ждёт ручного одобрения в админке",
+    )
     last_fetched_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -87,6 +91,8 @@ class Article(models.Model):
         FETCHED = "fetched", "Fetched"
         EXTRACTED = "extracted", "Extracted"
         REWRITTEN = "rewritten", "Rewritten"
+        PENDING = "pending", "Pending review"
+        REJECTED = "rejected", "Rejected"
         PUBLISHED = "published", "Published"
         FAILED = "failed", "Failed"
         SKIPPED = "skipped", "Skipped"

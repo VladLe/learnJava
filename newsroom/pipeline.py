@@ -118,11 +118,14 @@ def rewrite_articles(source: Source | None = None) -> tuple[int, int]:
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
             )
-            Article.objects.filter(pk=article.pk).update(
-                status=Article.Status.REWRITTEN, error=""
+            next_status = (
+                Article.Status.PENDING
+                if article.source.require_moderation
+                else Article.Status.REWRITTEN
             )
+            Article.objects.filter(pk=article.pk).update(status=next_status, error="")
             rewritten += 1
-            logger.info("Rewritten: %s", article.original_title)
+            logger.info("Rewritten (%s): %s", next_status, article.original_title)
         except Exception as exc:
             Article.objects.filter(pk=article.pk).update(
                 status=Article.Status.FAILED, error=str(exc)
