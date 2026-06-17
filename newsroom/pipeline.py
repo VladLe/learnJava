@@ -3,8 +3,6 @@ import logging
 from django.db import IntegrityError
 from django.utils import timezone
 
-from django.utils import timezone
-
 from .models import Article, Publication, RewrittenContent, Source
 from . import dedup
 from .extract.article import extract_text
@@ -196,3 +194,28 @@ def publish_articles(source: Source | None = None) -> tuple[int, int]:
             logger.warning("Publish failed for article %d: %s", article.pk, exc)
 
     return published, failed
+
+
+def run_source(source: Source) -> dict:
+    """Run the full pipeline end-to-end for a single source.
+
+    Each stage selects articles by status, so stages are idempotent and a
+    rerun continues where the previous run stopped. Returns per-stage counts.
+    """
+    logger.info("Running full pipeline for source '%s'", source.name)
+
+    saved, skipped = fetch_and_store(source)
+    extracted, extract_failed = extract_articles(source)
+    rewritten, rewrite_failed = rewrite_articles(source)
+    published, publish_failed = publish_articles(source)
+
+    result = {
+        "fetched": saved,
+        "skipped": skipped,
+        "extracted": extracted,
+        "rewritten": rewritten,
+        "published": published,
+        "failed": extract_failed + rewrite_failed + publish_failed,
+    }
+    logger.info("Source '%s' pipeline result: %s", source.name, result)
+    return result

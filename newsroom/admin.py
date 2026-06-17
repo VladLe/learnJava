@@ -85,9 +85,27 @@ class SourceAdmin(admin.ModelAdmin):
     list_display = ["name", "url", "target_site", "target_category", "enabled", "last_fetched_at"]
     list_filter = ["enabled", "target_site", "tone", "target_length"]
     search_fields = ["name", "url"]
+    actions = ["action_run_now"]
 
     class Media:
         js = ("newsroom/admin/source_admin.js",)
+
+    @admin.action(description="Собрать сейчас (полный конвейер)")
+    def action_run_now(self, request, queryset):
+        from . import pipeline
+
+        for source in queryset:
+            try:
+                result = pipeline.run_source(source)
+                self.message_user(
+                    request,
+                    f"{source.name}: получено {result['fetched']}, "
+                    f"опубликовано {result['published']}, ошибок {result['failed']}.",
+                    messages.SUCCESS,
+                )
+            except Exception as exc:
+                logger.exception("run_now failed for %s", source.name)
+                self.message_user(request, f"{source.name}: ошибка — {exc}", messages.ERROR)
 
     def get_urls(self):
         return [
