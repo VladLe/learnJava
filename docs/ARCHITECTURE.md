@@ -1,23 +1,32 @@
 # Архитектура
 
-## Обзор конвейера
+## Обзор
+
+Сервис состоит из двух частей:
+
+- **Админ-панель** (Django admin) — где администратор настраивает сайты
+  WordPress, RSS-ленты и привязку «лента → рубрика на сайте», а также следит за
+  работой конвейера.
+- **Фоновый конвейер** — собирает, переписывает и публикует новости по
+  расписанию, читая настройки из БД (тех самых, что заданы в админке).
 
 ```
-                       ┌─────────────────────────────────────────────┐
-                       │              Планировщик (APScheduler)        │
-                       │   запускает конвейер по расписанию источника  │
-                       └───────────────────────┬─────────────────────┘
-                                               │
+┌──────────────────────────┐        ┌──────────────────────────────────────┐
+│   Администратор           │        │            База данных                │
+│   (браузер, /admin)       │◀──────▶│  пользователи · сайты · категории ·   │
+│   Django admin            │  CRUD  │  источники · статьи · публикации      │
+└──────────────────────────┘        └───────────────┬──────────────────────┘
+                                                     │ читает настройки
+                                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                  Планировщик (django-apscheduler)                          │
+│            запускает конвейер по расписанию каждого источника              │
+└───────────────────────────────────┬───────────────────────────────────────┘
+                                     ▼
    ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
    │  Сбор    │──▶│ Дедупли- │──▶│Извлечение│──▶│  Рерайт  │──▶│Публикация│
    │  (RSS)   │   │  кация   │   │  текста  │   │  (LLM)   │   │   (WP)   │
    └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
-        │              │              │              │              │
-        ▼              ▼              ▼              ▼              ▼
-   ┌────────────────────────────────────────────────────────────────────┐
-   │                       База данных (состояние)                       │
-   │  sources · target_sites · articles · rewritten_content · publications│
-   └────────────────────────────────────────────────────────────────────┘
 ```
 
 Каждый шаг читает статьи в определённом статусе, обрабатывает их и переводит в
@@ -25,49 +34,90 @@
 создаёт дублей и продолжает с того места, где остановился (см.
 [DATA_MODEL.md](DATA_MODEL.md) — диаграмма статусов).
 
-## Структура проекта
+## Структура проекта (Django)
 
 ```
-news_rewriter/
-├── __init__.py
-├── config.py              # загрузка настроек (pydantic-settings + YAML)
-├── db.py                  # engine, session factory
-├── models.py              # ORM-модели (см. DATA_MODEL.md)
+config/                       # проект Django
+├── settings.py               # настройки (django-environ читает .env)
+├── urls.py                   # роутинг (в т.ч. /admin)
+└── wsgi.py / asgi.py
+
+newsroom/                     # основное приложение
+├── models.py                 # ORM-модели (см. DATA_MODEL.md)
+├── admin.py                  # регистрация моделей в Django admin + действия
+├── migrations/               # миграции Django
 │
-├── sources/               # сбор новостей
-│   ├── base.py            # интерфейс SourceFetcher
-│   └── rss.py             # реализация на feedparser
+├── sources/                  # сбор новостей
+│   ├── base.py               # интерфейс SourceFetcher
+│   └── rss.py                # реализация на feedparser
 │
 ├── extract/
-│   └── article.py         # извлечение полного текста (trafilatura)
+│   └── article.py            # извлечение полного текста (trafilatura)
 │
-├── rewrite/               # абстракция рерайтера
-│   ├── base.py            # RewriteService (ABC), RewriteRequest, RewriteResult
-│   ├── anthropic.py       # AnthropicRewriter
-│   ├── openai.py          # OpenAIRewriter
-│   └── factory.py         # выбор провайдера по конфигу
+├── rewrite/                  # абстракция рерайтера
+│   ├── base.py               # RewriteService (ABC), RewriteRequest, RewriteResult
+│   ├── anthropic.py          # AnthropicRewriter
+│   ├── openai.py             # OpenAIRewriter
+│   └── factory.py            # выбор провайдера по настройкам
 │
-├── publish/               # публикация
-│   ├── base.py            # интерфейс Publisher
-│   └── wordpress.py       # клиент WordPress REST API
+├── publish/                  # публикация
+│   ├── base.py               # интерфейс Publisher
+│   └── wordpress.py          # клиент WordPress REST API + синхронизация рубрик
 │
-├── pipeline.py            # оркестрация шагов fetch→dedup→extract→rewrite→publish
-├── dedup.py               # логика дедупликации (хеш URL/guid)
-├── scheduler.py           # регистрация задач APScheduler
-└── cli.py                 # точка входа: run-once / run-scheduled / add-source
+├── pipeline.py               # оркестрация шагов fetch→dedup→extract→rewrite→publish
+├── dedup.py                  # дедупликация (хеш URL/guid)
+├── scheduler.py              # настройка задач django-apscheduler
+└── management/commands/      # CLI-команды Django
+    ├── run_pipeline.py       # прогнать конвейер (разово / по источнику)
+    └── run_scheduler.py      # запустить планировщик
 
-config/
-├── settings.yaml          # источники и сайты (не секреты)
-└── .env                   # секреты: ключи API, пароли WordPress
-
-tests/
-└── ...
-
-alembic/                   # миграции БД
+config/.env                   # секреты: ключи API, ключ шифрования, БД
 pyproject.toml
 ```
 
-## Модули
+## Админ-панель
+
+Реализуется на **встроенной Django admin** — отдельный фронтенд не нужен.
+
+### Пользователь-администратор
+
+Используем встроенную аутентификацию Django. Администратор — это **суперюзер**,
+создаётся командой `python manage.py createsuperuser`. Вход — на `/admin`.
+Дополнительные сотрудники с ограниченными правами добавляются штатными
+средствами Django (staff-пользователи, группы и права), своя реализация auth не
+требуется.
+
+### Управление сайтами WordPress
+
+Модель `TargetSite` в админке (CRUD): адрес сайта, логин и пароль приложения
+WordPress, статус публикации по умолчанию (`draft`/`publish`). Действия в админке:
+
+- **«Проверить подключение»** — тестовый запрос к REST API сайта.
+- **«Синхронизировать рубрики»** — тянет категории с сайта
+  (`GET /wp-json/wp/v2/categories`) и сохраняет их в `WordPressCategory`, чтобы их
+  можно было выбирать у источников.
+
+### Управление RSS-лентами и привязка к рубрике
+
+Модель `Source` в админке (CRUD): URL ленты, периодичность опроса, целевой сайт
+(`target_site`), и **целевая рубрика** (`target_category`) — выпадающий список,
+отфильтрованный по выбранному сайту и заполненный синхронизированными ранее
+категориями. Так администратор прямо указывает, **в какую рубрику какого сайта
+попадают новости конкретной ленты**. Также: статус публикации (переопределяет
+дефолт сайта), вкл/выкл, тон и длина рерайта. Действие **«Собрать сейчас»**
+запускает конвейер для одной ленты вручную, не дожидаясь расписания.
+
+### Наблюдение за конвейером
+
+Модели `Article` и `Publication` показываются в админке в режиме мониторинга:
+фильтр по статусу и источнику, текст ошибки у упавших, действие **«Повторить»**
+для статей в статусе `failed`. Если у источника включён флаг
+`require_moderation`, статьи в статусе `pending` ждут решения: действия
+**«Одобрить»** (→ `rewritten`, попадёт в публикацию) и **«Отклонить»**
+(→ `rejected`). История запусков планировщика видна через модели
+`django-apscheduler`.
+
+## Модули конвейера
 
 ### sources — сбор
 
@@ -92,14 +142,17 @@ class SourceFetcher(ABC):
 
 ### extract — извлечение текста
 
-`trafilatura` загружает страницу оригинала по URL и достаёт основной текст,
-очищая навигацию, рекламу и комментарии. Если извлечь не удалось — статья
-помечается статусом `failed` с причиной, конвейер продолжает работу с
-остальными.
+Страница оригинала скачивается нашим `httpx`-клиентом (с настраиваемым
+`EXTRACT_USER_AGENT`, таймаутом и редиректами), а `trafilatura.extract` достаёт
+из готового HTML основной текст, очищая навигацию, рекламу и комментарии.
+Скачивание и парсинг намеренно разделены: так мы управляем HTTP-клиентом
+единообразно со всем кодом и не зависим от встроенного загрузчика trafilatura.
+Если скачать или извлечь не удалось — статья помечается статусом `failed` с
+причиной, конвейер продолжает работу с остальными.
 
 ### rewrite — абстракция рерайтера
 
-Ядро требования «сделать абстракцию». Контракт не зависит от провайдера:
+Контракт не зависит от провайдера:
 
 ```python
 @dataclass
@@ -133,16 +186,15 @@ class RewriteService(ABC):
 Реализации:
 
 - **`AnthropicRewriter`** — официальный SDK `anthropic`. По умолчанию модель
-  `claude-opus-4-8` (максимальное качество). Для высоких объёмов в конфиге можно
-  выбрать более дешёвые `claude-sonnet-4-6` или `claude-haiku-4-5` — рерайт это
-  не самая «тяжёлая» задача, и Sonnet/Haiku обычно хватает. Ответ запрашиваем в
-  виде структурированного JSON (`output_config.format`), чтобы надёжно разобрать
-  заголовок, тело и SEO-поля без хрупкого парсинга текста.
+  `claude-opus-4-8` (максимальное качество). Для высоких объёмов в настройках
+  можно выбрать более дешёвые `claude-sonnet-4-6` или `claude-haiku-4-5` — рерайт
+  это не самая «тяжёлая» задача. Ответ запрашиваем в виде структурированного JSON
+  (`output_config.format`), чтобы надёжно разобрать заголовок, тело и SEO-поля.
 - **`OpenAIRewriter`** — альтернатива на GPT-моделях с тем же контрактом.
 
-`factory.get_rewriter(config)` возвращает нужную реализацию по
-`config.rewrite.provider`. Остальной код знает только про `RewriteService` —
-смена провайдера не затрагивает конвейер.
+`factory.get_rewriter(settings)` возвращает нужную реализацию по выбранному
+провайдеру. Остальной код знает только про `RewriteService` — смена провайдера не
+затрагивает конвейер.
 
 **Промпт** инструктирует модель: переписать своими словами с сохранением фактов,
 не выдумывать детали, оформить тело в HTML под WordPress, сгенерировать SEO-мета
@@ -155,42 +207,59 @@ class RewriteService(ABC):
 ```python
 class Publisher(ABC):
     @abstractmethod
-    def publish(self, site: TargetSite, content: RewriteResult,
-                source_url: str) -> PublishOutcome: ...
+    def publish(self, site: TargetSite, category: WordPressCategory | None,
+                content: RewriteResult, source_url: str) -> PublishOutcome: ...
 ```
 
 `WordPressPublisher` работает через **WordPress REST API**
 (`POST /wp-json/wp/v2/posts`). Аутентификация — **Application Passwords**
 (штатный механизм WP с версии 5.6): пара «логин + пароль приложения» по Basic
-Auth поверх HTTPS, без плагинов. Поддерживаемые параметры: статус
-(`draft`/`publish`), рубрика, теги, изображение записи (опционально). Возвращаем
-ID и URL созданного поста для записи в `publications`.
+Auth поверх HTTPS, без плагинов. В пост проставляются: статус, **рубрика** (id
+категории из `target_category` источника), теги, изображение записи (опционально).
+Возвращаем ID и URL созданного поста для записи в `publications`. Этот же модуль
+реализует синхронизацию рубрик (`GET /wp-json/wp/v2/categories`) для админ-панели.
 
 > Альтернатива — старый XML-RPC, но REST API предпочтительнее: он современный,
 > безопаснее и не требует включать XML-RPC (частый вектор атак).
 
+### images — изображение записи
+
+Абстракция по тому же принципу, что и рерайтер: `ImageProvider` (ABC) с методом
+`search(query) -> ImageCandidate | None` и фабрикой `get_image_provider()` по
+настройке `IMAGE_PROVIDER` (`none` по умолчанию). Реализация `PexelsImageProvider`
+ищет фото в стоковом банке [Pexels](https://www.pexels.com) (лицензия без
+обязательной атрибуции, коммерческое использование разрешено). Запрос строится из
+тегов рерайта (или заголовка). На шаге публикации картинка скачивается, грузится в
+медиатеку WordPress (`POST /wp-json/wp/v2/media`) и проставляется как
+`featured_media`. Подбор включается на уровне источника флагом
+`add_featured_image`. Сбой подбора/загрузки изображения **не блокирует
+публикацию** — пост выходит без картинки, ошибка только логируется.
+
 ### pipeline — оркестрация
 
-`pipeline.py` связывает шаги и управляет переходами статусов в одной транзакции
-на статью. Псевдокод:
+`pipeline.py` связывает шаги и управляет переходами статусов. Псевдокод:
 
 ```python
 def run_source(source: Source) -> None:
     for item in fetcher.fetch(source):
         if dedup.is_seen(item):          # уже обрабатывали — пропуск
             continue
-        article = store_article(item, status="fetched")
+        article = store_article(item, source, status="fetched")
         try:
-            article.full_text = extractor.extract(article.url)
+            article.full_text = extractor.extract(article.source_url)
             set_status(article, "extracted")
 
-            result = rewriter.rewrite(to_request(article))
+            result = rewriter.rewrite(to_request(article, source))
             store_rewritten(article, result)
             set_status(article, "rewritten")
 
-            site = resolve_target_site(source)
-            outcome = publisher.publish(site, result, article.url)
-            store_publication(article, site, outcome)
+            outcome = publisher.publish(
+                site=source.target_site,
+                category=source.target_category,   # рубрика именно этой ленты
+                content=result,
+                source_url=article.source_url,
+            )
+            store_publication(article, source.target_site, outcome)
             set_status(article, "published")
         except Exception as e:
             set_status(article, "failed", error=str(e))
@@ -198,50 +267,30 @@ def run_source(source: Source) -> None:
 
 Шаги намеренно разделены по статусам, чтобы их можно было запускать и
 перезапускать независимо (например, повторить только публикацию для статей в
-статусе `rewritten`).
+статусе `rewritten`). Запуск — из планировщика, из команды
+`python manage.py run_pipeline` или из действия «Собрать сейчас» в админке.
 
 ### scheduler — расписание
 
-`APScheduler` регистрирует по задаче на каждый включённый источник с его
-интервалом (`fetch_interval`). Для старта достаточно in-process планировщика;
-при росте нагрузки конвейер выносится в очередь задач (Celery + beat / RQ) без
-изменения бизнес-логики.
+`django-apscheduler` регистрирует по задаче на каждый включённый источник с его
+интервалом (`fetch_interval_minutes`) и хранит задачи и историю запусков в БД —
+их видно в админке. Планировщик запускается командой
+`python manage.py run_scheduler` (отдельный процесс). При росте нагрузки конвейер
+выносится в Celery + beat без изменения бизнес-логики.
 
-## Конфигурация
+## Конфигурация и секреты
 
-Разделяем секреты и параметры:
+- **`.env`** (через `django-environ`) — секреты уровня сервиса: `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, `SECRET_KEY` Django, `FIELD_ENCRYPTION_KEY` (для шифрования
+  паролей WP в БД), строка подключения к БД.
+- **БД (через админку)** — то, что раньше было в YAML: сайты, источники, привязки
+  к рубрикам. Теперь это редактируемые в админ-панели данные, а не статический
+  конфиг.
 
-- **`.env`** (через `pydantic-settings`) — секреты: `ANTHROPIC_API_KEY`,
-  `OPENAI_API_KEY`, пароли приложений WordPress, строка подключения к БД.
-- **`config/settings.yaml`** — несекретная конфигурация: список источников,
-  список целевых сайтов, какой источник в какой сайт публикует, выбор провайдера
-  рерайта и модели.
-
-Пример `settings.yaml`:
-
-```yaml
-rewrite:
-  provider: anthropic        # anthropic | openai
-  model: claude-opus-4-8
-  tone: analytical
-  target_length: medium
-
-target_sites:
-  - id: blog_main
-    base_url: https://example.com
-    auth_user: editor
-    auth_app_password_env: WP_BLOG_MAIN_APP_PASSWORD
-    default_status: draft     # draft на старте, publish — после проверки
-    default_category_id: 5
-
-sources:
-  - id: techcrunch
-    type: rss
-    url: https://techcrunch.com/feed/
-    enabled: true
-    fetch_interval_minutes: 30
-    target_site_id: blog_main
-```
+**Пароли приложений WordPress** администратор вводит в админке, поэтому они
+хранятся в БД **в зашифрованном виде** (например, `django-encrypted-model-fields`
+с ключом `FIELD_ENCRYPTION_KEY` из окружения), а не открытым текстом. Ключи LLM
+остаются в окружении и в БД не попадают.
 
 ## Обработка ошибок и наблюдаемость
 
@@ -249,7 +298,7 @@ sources:
   и `httpx` это умеют из коробки).
 - **Идемпотентность** через статусы и уникальный хеш URL — повторный запуск
   безопасен.
-- **Структурное логирование** каждого перехода статуса; ошибки сохраняются в
-  поле `error` соответствующей записи.
+- **Логирование** каждого перехода статуса; ошибки сохраняются в поле `error`
+  записи и видны в админке.
 - **Публикация в `draft`** по умолчанию на старте — даёт человеку проверить
   качество рерайта перед автопубликацией.
