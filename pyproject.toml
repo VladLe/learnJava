@@ -27,6 +27,7 @@ dev = [
 prod = [
     "gunicorn>=22.0",
     "psycopg[binary]>=3.1",
+    "whitenoise>=6.7",
 ]
 
 [tool.setuptools.packages.find]
