@@ -67,6 +67,25 @@ class WordPressPublisher(Publisher):
         return tag_ids
 
     @staticmethod
+    def update_status(site, wp_post_id: int, status: str) -> None:
+        """Change the status of an existing post (e.g. promote draft → publish)."""
+        base = site.base_url.rstrip("/")
+        try:
+            resp = httpx.post(
+                f"{base}/wp-json/wp/v2/posts/{wp_post_id}",
+                auth=(site.auth_user, site.auth_app_password),
+                json={"status": status},
+                timeout=30,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise PublishError(
+                f"WordPress API error {exc.response.status_code}: {exc.response.text[:200]}"
+            ) from exc
+        except Exception as exc:
+            raise PublishError(f"WordPress connection error: {exc}") from exc
+
+    @staticmethod
     def check_connection(site) -> None:
         """Test the WordPress REST API connection. Raises on failure."""
         url = f"{site.base_url.rstrip('/')}/wp-json/wp/v2/"

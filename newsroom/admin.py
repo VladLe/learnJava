@@ -18,7 +18,22 @@ class TargetSiteAdmin(admin.ModelAdmin):
     list_display = ["name", "base_url", "default_status", "enabled", "created_at"]
     list_filter = ["enabled", "default_status"]
     search_fields = ["name", "base_url"]
-    actions = ["action_check_connection", "action_sync_categories"]
+    actions = [
+        "action_check_connection",
+        "action_sync_categories",
+        "action_enable_autopublish",
+        "action_disable_autopublish",
+    ]
+
+    @admin.action(description="Включить автопубликацию (статус по умолчанию → publish)")
+    def action_enable_autopublish(self, request, queryset):
+        n = queryset.update(default_status=TargetSite.Status.PUBLISH)
+        self.message_user(request, f"Автопубликация включена для {n} сайтов.", messages.SUCCESS)
+
+    @admin.action(description="Выключить автопубликацию (статус по умолчанию → draft)")
+    def action_disable_autopublish(self, request, queryset):
+        n = queryset.update(default_status=TargetSite.Status.DRAFT)
+        self.message_user(request, f"Автопубликация выключена для {n} сайтов.", messages.SUCCESS)
 
     @admin.action(description="Проверить подключение к WordPress")
     def action_check_connection(self, request, queryset):
@@ -161,3 +176,22 @@ class PublicationAdmin(admin.ModelAdmin):
     list_display = ["article", "target_site", "status", "wp_post_id", "published_at"]
     list_filter = ["status", "target_site"]
     readonly_fields = ["published_at"]
+    actions = ["action_promote_to_publish"]
+
+    @admin.action(description="Опубликовать на сайте (снять с черновика)")
+    def action_promote_to_publish(self, request, queryset):
+        done = errors = 0
+        for pub in queryset.select_related("target_site"):
+            if not pub.wp_post_id:
+                continue
+            try:
+                WordPressPublisher.update_status(pub.target_site, pub.wp_post_id, "publish")
+                done += 1
+            except Exception as exc:
+                logger.exception("promote failed for publication %d", pub.pk)
+                self.message_user(request, f"#{pub.pk}: ошибка — {exc}", messages.ERROR)
+                errors += 1
+        if done:
+            self.message_user(request, f"Снято с черновика: {done} постов.", messages.SUCCESS)
+        if not done and not errors:
+            self.message_user(request, "Нет постов с wp_post_id для публикации.", messages.WARNING)

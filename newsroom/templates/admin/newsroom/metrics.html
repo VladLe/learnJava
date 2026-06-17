@@ -1,0 +1,53 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a> &rsaquo; Метрики
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <h2>Статьи</h2>
+  <p>Всего: <strong>{{ metrics.articles_total }}</strong></p>
+  <table>
+    <thead><tr><th>Статус</th><th>Количество</th></tr></thead>
+    <tbody>
+      {% for row in metrics.article_statuses %}
+      <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Публикации</h2>
+  <p>Опубликовано: <strong>{{ metrics.publications_published }}</strong>,
+     ошибок: <strong>{{ metrics.publications_failed }}</strong></p>
+
+  <h2>Затраты токенов</h2>
+  <p>Рерайтов: <strong>{{ metrics.rewrites_total }}</strong>,
+     токены ввода: <strong>{{ metrics.tokens_input }}</strong>,
+     токены вывода: <strong>{{ metrics.tokens_output }}</strong></p>
+  <table>
+    <thead><tr><th>Провайдер</th><th>Модель</th><th>Рерайтов</th><th>Ввод</th><th>Вывод</th></tr></thead>
+    <tbody>
+      {% for row in metrics.by_model %}
+      <tr>
+        <td>{{ row.provider }}</td>
+        <td>{{ row.model }}</td>
+        <td>{{ row.rewrites }}</td>
+        <td>{{ row.input_tokens }}</td>
+        <td>{{ row.output_tokens }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">Пока нет данных.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Источники и сайты</h2>
+  <p>Источников: <strong>{{ metrics.sources_enabled }}</strong> из {{ metrics.sources_total }} активны.<br>
+     Сайтов: <strong>{{ metrics.sites_enabled }}</strong> из {{ metrics.sites_total }} активны.</p>
+
+</div>
+{% endblock %}

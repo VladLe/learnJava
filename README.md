@@ -4,9 +4,12 @@
 помощью LLM (добавляя собственную ценность) и публикует результат в один или
 несколько сайтов на WordPress. Управление — через **админ-панель**.
 
-> **Статус:** этап проектирования. Кода приложения пока нет — этот репозиторий
-> содержит архитектуру, схему данных и план реализации. Реализацию начинаем
-> следующим шагом.
+> **Статус:** реализованы этапы 0–6 и ядро этапа 7 из [плана](docs/ROADMAP.md):
+> Django-проект, админ-панель, сбор RSS с дедупликацией, извлечение текста,
+> рерайт (Anthropic/OpenAI), публикация в WordPress, планировщик, метрики,
+> переключение автопубликации и деплой (Docker + PostgreSQL). Логика покрыта
+> тестами (`pytest`). Опционально (по мере роста нагрузки): Celery вместо
+> in-process планировщика, генерация изображений записи.
 
 ## Что делает сервис
 
@@ -57,6 +60,42 @@
 - **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)** — модели БД, статусы, диаграмма
   состояний обработки.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — поэтапный план реализации.
+
+## Запуск
+
+### Локально (разработка)
+
+```bash
+pip install -e ".[dev]"
+cp .env.example .env          # заполнить SECRET_KEY, FIELD_ENCRYPTION_KEY, ключи LLM
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver     # админка: http://localhost:8000/admin
+```
+
+Запуск конвейера и планировщика:
+
+```bash
+python manage.py run_pipeline                 # все источники, все шаги
+python manage.py run_pipeline --step fetch    # только сбор
+python manage.py run_pipeline --source-id 1   # один источник
+python manage.py run_scheduler                # фоновый планировщик
+```
+
+Метрики конвейера — на странице `/admin/metrics/`.
+
+### Продакшн (Docker + PostgreSQL)
+
+```bash
+cp .env.example .env           # DATABASE_URL=postgres://newsroom:newsroom@db:5432/newsroom
+docker compose up --build      # web (gunicorn) + scheduler + postgres
+```
+
+Запуск тестов:
+
+```bash
+pytest
+```
 
 ## Правовые и этические замечания
 
