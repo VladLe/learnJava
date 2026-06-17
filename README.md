@@ -77,11 +77,18 @@ python manage.py runserver     # админка: http://localhost:8000/admin
 Запуск конвейера и планировщика:
 
 ```bash
+python manage.py doctor                       # префлайт: проверить все интеграции
+python manage.py doctor --llm                 # + тестовый вызов рерайтера (тратит токены)
 python manage.py run_pipeline                 # все источники, все шаги
 python manage.py run_pipeline --step fetch    # только сбор
 python manage.py run_pipeline --source-id 1   # один источник
 python manage.py run_scheduler                # фоновый планировщик
 ```
+
+Перед боевым запуском прогони `doctor` — он независимо проверит БД, ключ
+шифрования, доступность RSS-лент, извлечение текста, подключение к сайтам
+WordPress, провайдер изображений и наличие ключа LLM, и покажет, что
+настроено, а что нет.
 
 Метрики конвейера — на странице `/admin/metrics/`.
 

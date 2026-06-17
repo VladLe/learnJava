@@ -91,6 +91,12 @@ OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o")
 IMAGE_PROVIDER = env("IMAGE_PROVIDER", default="none")  # none | pexels
 PEXELS_API_KEY = env("PEXELS_API_KEY", default="")
 
+# Text extraction
+EXTRACT_USER_AGENT = env(
+    "EXTRACT_USER_AGENT",
+    default="Mozilla/5.0 (compatible; NewsRewriter/1.0; +https://example.com/bot)",
+)
+
 # APScheduler
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 APSCHEDULER_RUN_NOW_TIMEOUT = 25
